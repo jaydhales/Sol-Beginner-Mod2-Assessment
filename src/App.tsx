@@ -11,7 +11,6 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import { useEffect, useState } from "react";
-import './App.css'
 
 // import to fix polyfill issue with buffer with webpack
 import * as buffer from "buffer";
@@ -77,10 +76,10 @@ export default function App() {
   );
 
   // create a state variable for our connection
-  const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
+  // const connection = new Connection(clusterApiUrl("devnet"), "confirmed");
   
   // connection to use with local solana test validator
-  // const connection = new Connection("http://127.0.0.1:8899", "confirmed");
+  const connection = new Connection("http://127.0.0.1:8899", "confirmed");
 
   // this is the function that runs whenever the component updates (e.g. render, refresh)
   useEffect(() => {
@@ -97,22 +96,31 @@ export default function App() {
    */
   const createSender = async () => {
     // create a new Keypair
+    const keypair = Keypair.generate();
 
+    const {publicKey} = keypair;
 
-    console.log('Sender account: ', senderKeypair!.publicKey.toString());
+    console.log('Sender account: ', publicKey.toString());
     console.log('Airdropping 2 SOL to Sender Wallet');
 
     // save this new KeyPair into this state variable
-    setSenderKeypair(/*KeyPair here*/);
+    setSenderKeypair(keypair);
 
     // request airdrop into this new account
-    
+    const airdropSig = await connection.requestAirdrop(
+      publicKey,
+      2 *LAMPORTS_PER_SOL
+    )
 
     const latestBlockHash = await connection.getLatestBlockhash();
 
     // now confirm the transaction
-
-    console.log('Wallet Balance: ' + (await connection.getBalance(senderKeypair!.publicKey)) / LAMPORTS_PER_SOL);
+    await connection.confirmTransaction({
+      blockhash: latestBlockHash.blockhash,
+      lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
+      signature: airdropSig,
+    });
+    console.log('Wallet Balance: ' + (await connection.getBalance(publicKey)) / LAMPORTS_PER_SOL);
   }
 
   /**
@@ -127,9 +135,11 @@ export default function App() {
     if (solana) {
       try {
         // connect to phantom wallet and return response which includes the wallet public key
-
+        const wallet = await solana.connect();
+        console.log({wallet});
+        
         // save the public key of the phantom wallet to the state variable
-        setReceiverPublicKey(/*PUBLIC KEY*/);
+        setReceiverPublicKey(wallet.publicKey);
       } catch (err) {
         console.log(err);
       }
@@ -161,12 +171,25 @@ export default function App() {
    * This function is called when the Transfer SOL to Phantom Wallet button is clicked
    */
   const transferSol = async () => {    
+
+    console.log("Sender Balance Before: " + await connection.getBalance(senderKeypair!.publicKey) / LAMPORTS_PER_SOL);
     
     // create a new transaction for the transfer
-
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: senderKeypair!.publicKey,
+        toPubkey: receiverPublicKey!,
+        lamports: 1 * LAMPORTS_PER_SOL
+      })
+    )
     // send and confirm the transaction
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      tx,
+      [senderKeypair!]
+    )
 
-    console.log("transaction sent and confirmed");
+    console.log("transaction sent and confirmed with" + signature);
     console.log("Sender Balance: " + await connection.getBalance(senderKeypair!.publicKey) / LAMPORTS_PER_SOL);
     console.log("Receiver Balance: " + await connection.getBalance(receiverPublicKey!) / LAMPORTS_PER_SOL);
   };
@@ -179,7 +202,7 @@ export default function App() {
         <span className ="buttons">
           <button
             style={{
-              fontSize: "16px",
+              fontSize: "16px", 
               padding: "15px",
               fontWeight: "bold",
               borderRadius: "5px",
